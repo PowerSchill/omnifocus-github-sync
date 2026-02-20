@@ -1,0 +1,15 @@
+{
+    "identifier": "com.omnifocus.plugin.github-sync",
+    "author": "powerschill",
+    "version": "1.0.0",
+    "description": "One-way sync from GitHub Issues to OmniFocus using search queries",
+    "defaultLocale": "en",
+    "libraries": [
+        { "identifier": "githubCommon" }
+    ],
+    "actions": [
+        { "identifier": "configureGitHub",  "image": "gearshape.fill" },
+        { "identifier": "syncGitHub",       "image": "arrow.triangle.2.circlepath" },
+        { "identifier": "syncGitHubFull",   "image": "arrow.triangle.2.circlepath.circle.fill" }
+    ]
+}

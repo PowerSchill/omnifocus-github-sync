@@ -1,0 +1,12 @@
+{
+    "name": "omnifocus-github-sync",
+    "version": "1.0.0",
+    "description": "OmniFocus plugin for one-way sync from GitHub Issues",
+    "scripts": {
+        "lint": "eslint 'omnifocus-github-sync.omnifocusjs/Resources/**/*.js'"
+    },
+    "devDependencies": {
+        "eslint": "^8.0.0"
+    },
+    "license": "MIT"
+}

@@ -1,0 +1,27 @@
+{
+    "env": { "es2020": true },
+    "parserOptions": { "ecmaVersion": 2020, "sourceType": "script" },
+    "globals": {
+        "PlugIn": "readonly",
+        "Form": "readonly",
+        "Alert": "readonly",
+        "Task": "readonly",
+        "Tag": "readonly",
+        "Project": "readonly",
+        "Version": "readonly",
+        "Preferences": "readonly",
+        "Credentials": "readonly",
+        "URL": "readonly",
+        "Timer": "readonly",
+        "flattenedTasks": "readonly",
+        "flattenedProjects": "readonly",
+        "tagNamed": "readonly",
+        "folderNamed": "readonly",
+        "console": "readonly",
+        "moveTasks": "readonly"
+    },
+    "rules": {
+        "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+        "no-undef": "error"
+    }
+}
