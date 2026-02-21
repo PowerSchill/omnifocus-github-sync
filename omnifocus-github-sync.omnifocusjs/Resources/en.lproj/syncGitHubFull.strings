@@ -1,3 +1,5 @@
-"syncGitHubFull.label" = "Full Refresh from GitHub";
-"syncGitHubFull.shortLabel" = "Full Refresh";
-"syncGitHubFull.longLabel" = "Full Refresh of All GitHub Issues";
+"label" = "Full Refresh from GitHub";
+"shortLabel" = "Full Refresh";
+"mediumLabel" = "Full Refresh";
+"longLabel" = "Full Refresh of All GitHub Issues";
+"paletteLabel" = "Full Refresh";

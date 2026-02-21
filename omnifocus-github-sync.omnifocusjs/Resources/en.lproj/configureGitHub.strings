@@ -1,3 +1,5 @@
-"configureGitHub.label" = "GitHub Settings";
-"configureGitHub.shortLabel" = "Settings";
-"configureGitHub.longLabel" = "Configure GitHub Connection";
+"label" = "GitHub Settings";
+"shortLabel" = "Settings";
+"mediumLabel" = "GitHub Settings";
+"longLabel" = "Configure GitHub Connection";
+"paletteLabel" = "GitHub Settings";
