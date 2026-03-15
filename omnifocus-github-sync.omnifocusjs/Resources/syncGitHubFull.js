@@ -26,8 +26,11 @@
             const syncStartTime = new Date().toISOString();
 
             // Fetch all issues (full refresh — no date filter)
+            // Replace is:open with is:issue so closed issues are also returned
+            // and can be properly marked complete with updated metadata
+            const fullQuery = searchQuery.replace(/\bis:open\b/g, 'is:issue');
             console.log('Starting full refresh sync...');
-            const issues = await lib.fetchGitHubIssues(token, searchQuery, true, null);
+            const issues = await lib.fetchGitHubIssues(token, fullQuery, true, null);
             console.log('Fetched ' + issues.length + ' issues from GitHub');
 
             // Build indexes

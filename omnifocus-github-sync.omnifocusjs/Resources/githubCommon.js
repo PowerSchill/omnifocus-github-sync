@@ -242,8 +242,11 @@
     githubCommon.fetchGitHubIssues = async function(token, searchQuery, fullRefresh, lastSyncTime) {
         let query = searchQuery;
 
-        // For incremental sync, append date filter
+        // For incremental sync, replace is:open with is:issue so that
+        // recently-closed issues are returned and can be marked complete.
+        // Then append the date filter to limit results to recent changes.
         if (!fullRefresh && lastSyncTime) {
+            query = query.replace(/\bis:open\b/g, 'is:issue');
             query += ' updated:>=' + lastSyncTime;
         }
 
