@@ -3,31 +3,37 @@
         const lib = this.githubCommon;
 
         try {
-            // Load settings
-            const settings = lib.getSettings();
-            if (!settings || !settings.searchQuery || !settings.tagName) {
-                throw new Error('GitHub Sync is not configured. Please run "GitHub Settings" first.');
+            // Migrate legacy settings if needed
+            lib.migrateIfNeeded();
+
+            // Load profiles and pick one
+            const profiles = lib.getProfiles();
+            if (profiles.length === 0) {
+                throw new Error('No GitHub profiles configured. Please run "GitHub Settings" first.');
             }
 
+            const profile = await lib.pickProfile(profiles, 'Quick Sync');
+            if (!profile) return;
+
             // Load credentials
-            const creds = lib.getCredentials();
+            const creds = lib.getCredentials(profile.id);
             if (!creds || !creds.token) {
-                throw new Error('GitHub credentials not found. Please run "GitHub Settings" first.');
+                throw new Error('Credentials not found for profile "' + profile.name + '". Please reconfigure it.');
             }
 
             const token = creds.token;
-            const searchQuery = settings.searchQuery;
-            const tagName = settings.tagName;
-            const enableProjectOrganization = settings.enableProjectOrganization || false;
-            const defaultFolder = settings.defaultProjectFolder || '';
-            const lastSyncTime = settings.lastSyncTime || null;
+            const searchQuery = profile.searchQuery;
+            const tagName = profile.tagName;
+            const enableProjectOrganization = profile.enableProjectOrganization || false;
+            const defaultFolder = profile.defaultProjectFolder || '';
+            const lastSyncTime = profile.lastSyncTime || null;
 
             // Capture start time before fetching so issues updated mid-sync
             // are picked up on the next incremental run
             const syncStartTime = new Date().toISOString();
 
             // Fetch issues (incremental)
-            console.log('Starting incremental sync...');
+            console.log('Starting incremental sync for profile: ' + profile.name);
             const issues = await lib.fetchGitHubIssues(token, searchQuery, false, lastSyncTime);
             console.log('Fetched ' + issues.length + ' issues from GitHub');
 
@@ -54,7 +60,8 @@
 
                     const changed = lib.updateTaskFromGitHubIssue(
                         existingTask, issue.key, issue, tagName,
-                        enableProjectOrganization, defaultFolder, projectIndex
+                        enableProjectOrganization, defaultFolder, projectIndex,
+                        profile.id
                     );
 
                     if (changed) {
@@ -75,7 +82,8 @@
 
                     lib.createTaskFromGitHubIssue(
                         issue.key, issue, tagName,
-                        enableProjectOrganization, defaultFolder, projectIndex
+                        enableProjectOrganization, defaultFolder, projectIndex,
+                        profile.id
                     );
                     created++;
                 }
@@ -83,12 +91,12 @@
 
             // Update last sync time to when we started (not now), so any issues
             // updated during the sync window are caught next time
-            settings.lastSyncTime = syncStartTime;
-            lib.saveSettings(settings);
+            profile.lastSyncTime = syncStartTime;
+            lib.saveProfile(profile);
 
             // Show results
             const alert = new Alert(
-                'Sync Complete',
+                'Sync Complete — ' + profile.name,
                 'Created: ' + created + '\n' +
                 'Updated: ' + updated + '\n' +
                 'Reopened: ' + reopened + '\n' +
@@ -98,6 +106,9 @@
             await alert.show();
 
         } catch (e) {
+            if (e.message && e.message.indexOf('cancelled') !== -1) {
+                return;
+            }
             console.error('Sync error: ' + e.message);
             const alert = new Alert('Sync Failed', e.message);
             await alert.show();
@@ -106,9 +117,9 @@
 
     action.validate = function(_selection) {
         const lib = this.githubCommon;
-        const settings = lib.getSettings();
-        const creds = lib.getCredentials();
-        return !!(settings && settings.searchQuery && creds && creds.token);
+        lib.migrateIfNeeded();
+        const profiles = lib.getProfiles();
+        return profiles.length > 0;
     };
 
     return action;

@@ -192,19 +192,141 @@
         preferences.write(githubCommon.SETTINGS_KEY, JSON.stringify(settings));
     };
 
+    // ─── Profile Management ─────────────────────────────────────────────
+    githubCommon.generateProfileId = function(name) {
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        return slug + '-' + Date.now();
+    };
+
+    githubCommon.getProfiles = function() {
+        const settings = githubCommon.getSettings();
+        if (!settings || !settings.profiles) return [];
+        return settings.profiles;
+    };
+
+    githubCommon.saveProfiles = function(profiles) {
+        githubCommon.saveSettings({ profiles: profiles });
+    };
+
+    githubCommon.getProfile = function(profileId) {
+        const profiles = githubCommon.getProfiles();
+        for (const p of profiles) {
+            if (p.id === profileId) return p;
+        }
+        return null;
+    };
+
+    githubCommon.saveProfile = function(profile) {
+        const profiles = githubCommon.getProfiles();
+        let found = false;
+        for (let i = 0; i < profiles.length; i++) {
+            if (profiles[i].id === profile.id) {
+                profiles[i] = profile;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            profiles.push(profile);
+        }
+        githubCommon.saveProfiles(profiles);
+    };
+
+    githubCommon.deleteProfile = function(profileId) {
+        const profiles = githubCommon.getProfiles();
+        const filtered = profiles.filter(function(p) { return p.id !== profileId; });
+        githubCommon.saveProfiles(filtered);
+        githubCommon.deleteCredentials(profileId);
+    };
+
     // ─── Credentials Storage ─────────────────────────────────────────────
     // Credentials must be constructed during plug-in loading, not at call time
     const credentials = new Credentials();
 
-    githubCommon.getCredentials = function() {
-        const credential = credentials.read(githubCommon.CREDENTIAL_SERVICE);
+    githubCommon.getCredentials = function(profileId) {
+        const service = profileId
+            ? githubCommon.CREDENTIAL_SERVICE + '.' + profileId
+            : githubCommon.CREDENTIAL_SERVICE;
+        const credential = credentials.read(service);
         if (!credential) return null;
         return { username: credential.user, token: credential.password };
     };
 
-    githubCommon.saveCredentials = function(username, token) {
-        credentials.remove(githubCommon.CREDENTIAL_SERVICE);
-        credentials.write(githubCommon.CREDENTIAL_SERVICE, username, token);
+    githubCommon.saveCredentials = function(profileId, username, token) {
+        const service = githubCommon.CREDENTIAL_SERVICE + '.' + profileId;
+        credentials.remove(service);
+        credentials.write(service, username, token);
+    };
+
+    githubCommon.deleteCredentials = function(profileId) {
+        const service = githubCommon.CREDENTIAL_SERVICE + '.' + profileId;
+        credentials.remove(service);
+    };
+
+    // ─── Migration ──────────────────────────────────────────────────────
+    githubCommon.migrateIfNeeded = function() {
+        const settings = githubCommon.getSettings();
+        if (!settings) return;
+
+        // Already migrated
+        if (settings.profiles) return;
+
+        // Legacy flat settings detected — migrate to profiles array
+        console.log('Migrating legacy settings to profile format...');
+
+        const profileId = githubCommon.generateProfileId('Default');
+        const profile = {
+            id: profileId,
+            name: 'Default',
+            githubUrl: settings.githubUrl || 'https://github.com',
+            searchQuery: settings.searchQuery || '',
+            tagName: settings.tagName || '',
+            enableProjectOrganization: settings.enableProjectOrganization || false,
+            defaultProjectFolder: settings.defaultProjectFolder || '',
+            lastSyncTime: settings.lastSyncTime || null
+        };
+
+        // Migrate credentials from legacy service to profile-scoped service
+        const legacyCred = credentials.read(githubCommon.CREDENTIAL_SERVICE);
+        if (legacyCred) {
+            githubCommon.saveCredentials(profileId, legacyCred.user, legacyCred.password);
+            credentials.remove(githubCommon.CREDENTIAL_SERVICE);
+        }
+
+        githubCommon.saveProfiles([profile]);
+        console.log('Migration complete. Created profile: ' + profile.name + ' (' + profileId + ')');
+    };
+
+    // ─── Profile Picker ─────────────────────────────────────────────────
+    githubCommon.pickProfile = async function(profiles, promptTitle) {
+        if (profiles.length === 1) return profiles[0];
+
+        const form = new Form();
+        const optionValues = profiles.map(function(p) { return p.id; });
+        const optionLabels = profiles.map(function(p) { return p.name; });
+
+        form.addField(new Form.Field.Option(
+            'profileId',
+            'Profile',
+            optionValues,
+            optionLabels,
+            optionValues[0]
+        ));
+
+        await form.show(promptTitle || 'Select Profile', 'OK');
+
+        const selectedId = form.values.profileId;
+        for (const p of profiles) {
+            if (p.id === selectedId) return p;
+        }
+        return null;
+    };
+
+    // ─── Profile ID from Task Notes ─────────────────────────────────────
+    githubCommon.getProfileIdFromTask = function(task) {
+        if (!task.note) return null;
+        const match = task.note.match(/^Profile: (.+)$/m);
+        return match ? match[1] : null;
     };
 
     // ─── API Request Builder ─────────────────────────────────────────────
@@ -242,8 +364,11 @@
     githubCommon.fetchGitHubIssues = async function(token, searchQuery, fullRefresh, lastSyncTime) {
         let query = searchQuery;
 
-        // For incremental sync, append date filter
+        // For incremental sync, replace is:open with is:issue so that
+        // recently-closed issues are returned and can be marked complete.
+        // Then append the date filter to limit results to recent changes.
         if (!fullRefresh && lastSyncTime) {
+            query = query.replace(/\bis:open\b/g, 'is:issue');
             query += ' updated:>=' + lastSyncTime;
         }
 
@@ -440,7 +565,7 @@
     };
 
     // ─── Build Notes ─────────────────────────────────────────────────────
-    function buildNotes(issue) {
+    function buildNotes(issue, profileId) {
         let notes = '---\n';
         notes += 'URL: ' + issue.htmlUrl + '\n';
         notes += 'Status: ' + issue.state + '\n';
@@ -453,6 +578,10 @@
             notes += 'Milestone: ' + issue.milestone.title + '\n';
         }
 
+        if (profileId) {
+            notes += 'Profile: ' + profileId + '\n';
+        }
+
         notes += '---\n';
 
         if (issue.body) {
@@ -463,7 +592,7 @@
     }
 
     // ─── Task Creation ───────────────────────────────────────────────────
-    githubCommon.createTaskFromGitHubIssue = function(issueKey, issue, tagName, enableProjectOrganization, defaultFolder, projectIndex) {
+    githubCommon.createTaskFromGitHubIssue = function(issueKey, issue, tagName, enableProjectOrganization, defaultFolder, projectIndex, profileId) {
         const taskName = '[' + issueKey + '] ' + issue.title;
         const task = new Task(taskName);
 
@@ -473,7 +602,7 @@
         }
 
         // Set notes
-        task.note = buildNotes(issue);
+        task.note = buildNotes(issue, profileId);
 
         // Add tag
         const tag = githubCommon.findOrCreateTag(tagName);
@@ -494,7 +623,7 @@
     };
 
     // ─── Task Update ─────────────────────────────────────────────────────
-    githubCommon.updateTaskFromGitHubIssue = function(task, issueKey, issue, tagName, enableProjectOrganization, defaultFolder, projectIndex) {
+    githubCommon.updateTaskFromGitHubIssue = function(task, issueKey, issue, tagName, enableProjectOrganization, defaultFolder, projectIndex, profileId) {
         let changed = false;
 
         // Update name
@@ -519,7 +648,7 @@
         }
 
         // Update notes
-        const expectedNotes = buildNotes(issue);
+        const expectedNotes = buildNotes(issue, profileId);
         if (task.note !== expectedNotes) {
             task.note = expectedNotes;
             changed = true;
